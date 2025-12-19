@@ -181,7 +181,7 @@ with mujoco.viewer.launch_passive(model, data) as viewer:
 
     lastTime = data.time
     currentVelocity = 1.0
-    finalVelocity = 6.0
+    finalVelocity = 10.0
     Acceleration = 0.0
     accelerationIncrease = 1.0
     accelerationDecrease = 1.0
@@ -315,7 +315,7 @@ plt.legend()
 
 plt.subplot(4, 1, 2)
 plt.plot(logTime, logwheelSpeed, label='Velocity (m/s)', color='orange')
-plt.ylim(0, finalVelocity + 1)
+# plt.ylim(0, finalVelocity + 1)
 plt.axhline(finalVelocity, color='r', linestyle='--', label='Target')
 plt.title('Wheels Velocity')
 plt.grid(True)
