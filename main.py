@@ -48,7 +48,7 @@ d = 0.3291              # Wheel track [m]
 r = 0.07                # Wheel radius [m]
 g = 9.81                # Gravity [m/s^2]
 
-def LQR(current_l):
+def LQR(current_l,pos=None):
 
     # Moment of inertia
     I_wheel = m * (r**2) / 2        # Wheel inertia around center
@@ -93,14 +93,27 @@ def LQR(current_l):
         [B61, B62]
     ])
 
-    # LQR 權重配置 (可以在這裡微調)
-    # 建議：提高速度與Pitch的權重
-    Q = np.diag([0.0, 20.0, 100.0, 1.0, 1.0, 1.0]) 
+    Q = np.diag([0.0, 30.0, 800.0, 1.0, 1.0, 1.0]) 
     R = np.array([[1.0, 0.0], [0.0, 1.0]]) 
 
     P = scipy.linalg.solve_continuous_are(A, B, Q, R)
     K = np.linalg.inv(R) @ B.T @ P
-    
+
+    np.set_printoptions(precision=2, suppress=True)
+    if(pos == "stand"):
+        print("Matrix A in Stand is: \n", A)
+        print("Matrix B in Stand is: \n", B)
+        print("Value K in Stand is: \n", K)
+    elif(pos == "squat"):
+        print("Matrix A in Squat is: \n", A)
+        print("Matrix B in Squat is: \n", B)
+        print("Value K in Squat is: \n", K)
+    else:
+        print("Matrix A:\n", A)
+        print("Matrix B:\n", B)
+        print("Value K is: ", K)
+        
+    print("\n")
     return K
 
 # ==========================================
@@ -114,8 +127,8 @@ posStand = np.array([0.7, -1.5, 0, 0.7, -1.5, 0])
 CGSquat = 0.23 
 CGStand = 0.314
 
-KSquat = LQR(CGSquat)
-KStand = LQR(CGStand)
+KSquat = LQR(CGSquat, pos="squat")
+KStand = LQR(CGStand, pos="stand")
 # ==========================================
 # 3. Helper Functions
 # ==========================================
@@ -180,18 +193,16 @@ with mujoco.viewer.launch_passive(model, data) as viewer:
     viewer.cam.azimuth = 90
 
     lastTime = data.time
-    currentVelocity = 1.0
-    finalVelocity = 6.0
-    Acceleration = 0.0
-    accelerationIncrease = 1.0
-    accelerationDecrease = 1.0
-    torqueLimit = 12.0
+    currentVelocity = 0.0
+    finalVelocity = 4.0
+    Acceleration = 0.2
+
+    torqueLimit = 15.0
     lastTorque = 0.0
-    pitchLimit = 10.0
     
     targetYaw = 0.0
     TurningSpeed = 0.3
-    recoverySpeed = 5
+    recoverySpeed = 5.0
 
     while viewer.is_running():
         step_start = time.time()
@@ -231,38 +242,31 @@ with mujoco.viewer.launch_passive(model, data) as viewer:
         dt = currentTime - lastTime
         lastTime = currentTime
 
-        # Velocity control based on pitch angle and torque
-        Torque = abs(lastTorque)
-        Pitch = abs(np.degrees(pitch))
-
-        if Torque < torqueLimit and Pitch < pitchLimit:
-            Acceleration += accelerationIncrease * dt
+        start_run_time = 6.0
+        if currentTime < start_run_time:
+            currentVelocity = 0.15
+            
         else:
-            Acceleration -= accelerationDecrease * dt
-    
-        Acceleration = np.clip(Acceleration, 0.0, 1.0)
+            if currentVelocity < finalVelocity:
+                currentVelocity += Acceleration * dt
+            
+            elif currentVelocity > finalVelocity:
+                currentVelocity = finalVelocity
 
-        if currentVelocity < finalVelocity:
-            currentVelocity += Acceleration * dt
-        else:
             if turning:
                 currentVelocity -= Acceleration * dt
+                if currentVelocity < 0: currentVelocity = 0
 
-                currentVelocity = finalVelocity
-            Acceleration = 0.0 
-            
-        ratio = abs(currentVelocity) / finalVelocity
-        ratio = np.clip(ratio, 0.0, 1.0)
+        ratio = np.clip(abs(currentVelocity) / finalVelocity, 0.0, 1.0)
         KCurrent = (1 - ratio) * KSquat + ratio * KStand
         current_target_dof = (1 - ratio) * posSquat + ratio * posStand
 
-        target_pitch = -Acceleration / g 
         yaw_error = yaw - target_yaw_rad
 
         state = np.array([
             0.0,
             (averageWheelVelocity * r) - currentVelocity,
-            pitch - target_pitch,
+            pitch,
             gyroY,
             yaw_error,
             gyroZ
@@ -308,15 +312,15 @@ plt.figure(figsize=(12, 10))
 
 plt.subplot(4, 1, 1)
 plt.plot(logTime, logPitch, label='Pitch (deg)')
-plt.axhline(0, color='r', linestyle='--')
+# plt.axhline(pitchLimit, color='r', linestyle='--')
 plt.title('Body Pitch Angle')
 plt.grid(True)
 plt.legend()
 
 plt.subplot(4, 1, 2)
 plt.plot(logTime, logwheelSpeed, label='Velocity (m/s)', color='orange')
-# plt.ylim(0, finalVelocity + 1)
 plt.axhline(finalVelocity, color='r', linestyle='--', label='Target')
+plt.ylim(0, finalVelocity + 1)
 plt.title('Wheels Velocity')
 plt.grid(True)
 plt.legend()
